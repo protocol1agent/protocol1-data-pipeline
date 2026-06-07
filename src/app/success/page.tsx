@@ -1,9 +1,10 @@
-export default function SuccessPage({
+export default async function SuccessPage({
   searchParams,
 }: {
-  searchParams: { device?: string }
+  searchParams: Promise<{ device?: string }>
 }) {
-  const device = searchParams.device === 'whoop' ? 'Whoop' : 'Oura'
+  const { device: deviceParam } = await searchParams
+  const device = deviceParam === 'whoop' ? 'Whoop' : 'Oura'
 
   return (
     <main style={{

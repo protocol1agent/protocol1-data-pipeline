@@ -10,23 +10,28 @@ const OURA_SCOPES = 'email personal daily heartrate workout tag session spo2 rin
 export default async function OnboardPage({
   params,
 }: {
-  params: { token: string }
+  params: Promise<{ token: string }>
 }) {
-  const { data: client } = await supabase
+  const { token } = await params
+  const { data: client, error } = await supabase
     .from('clients')
     .select('*')
-    .eq('onboard_token', params.token)
+    .eq('onboard_token', token)
     .single()
 
+  console.log('TOKEN:', token)
+  console.log('CLIENT:', client)
+  console.log('ERROR:', error)
+
   if (!client) {
-    redirect('/error?msg=invalid_link')
+    redirect(`/error?msg=token_was_${token}`)
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL
 
-  const whoopUrl = `${WHOOP_AUTH_URL}?client_id=${process.env.WHOOP_CLIENT_ID}&redirect_uri=${baseUrl}/api/auth/whoop/callback&response_type=code&scope=${encodeURIComponent(WHOOP_SCOPES)}&state=${params.token}`
+  const whoopUrl = `${WHOOP_AUTH_URL}?client_id=${process.env.WHOOP_CLIENT_ID}&redirect_uri=${baseUrl}/api/auth/whoop/callback&response_type=code&scope=${encodeURIComponent(WHOOP_SCOPES)}&state=${token}`
 
-  const ouraUrl = `${OURA_AUTH_URL}?client_id=${process.env.OURA_CLIENT_ID}&redirect_uri=${baseUrl}/api/auth/oura/callback&response_type=code&scope=${encodeURIComponent(OURA_SCOPES)}&state=${params.token}`
+  const ouraUrl = `${OURA_AUTH_URL}?client_id=${process.env.OURA_CLIENT_ID}&redirect_uri=${baseUrl}/api/auth/oura/callback&response_type=code&scope=${encodeURIComponent(OURA_SCOPES)}&state=${token}`
 
   return (
     <main style={{

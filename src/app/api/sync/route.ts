@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
   for (const client of clients) {
     try {
-      let row: Record<string, string | number | null> = {
+      const row: Record<string, string | number | null> = {
         date: getYesterday(),
       }
 
@@ -24,13 +24,13 @@ export async function POST(request: NextRequest) {
         if (!client.whoop_access_token) continue
         const token = await refreshWhoopTokenIfNeeded(client)
         const whoopData = await fetchWhoopData(token)
-        row = { ...row, ...whoopData }
+        Object.assign(row, whoopData)
       }
 
       if (client.device === 'oura' || client.device === 'both') {
         if (!client.oura_access_token) continue
         const ouraData = await fetchOuraData(client.oura_access_token)
-        row = { ...row, ...ouraData }
+        Object.assign(row, ouraData)
       }
 
       if (client.google_sheet_id) {
@@ -52,8 +52,23 @@ function getYesterday(): string {
   return d.toISOString().split('T')[0]
 }
 
+function getYesterdayStart(): string {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  d.setUTCHours(0, 0, 0, 0)
+  return d.toISOString()
+}
+
+function getYesterdayEnd(): string {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  d.setUTCHours(23, 59, 59, 999)
+  return d.toISOString()
+}
+
 async function refreshWhoopTokenIfNeeded(client: Record<string, string>): Promise<string> {
   const expiresAt = new Date(client.whoop_token_expires_at)
+
   if (expiresAt > new Date(Date.now() + 5 * 60 * 1000)) {
     return client.whoop_access_token
   }
@@ -69,7 +84,15 @@ async function refreshWhoopTokenIfNeeded(client: Record<string, string>): Promis
     }),
   })
 
-  const tokens = await res.json()
+  const refreshText = await res.text()
+  console.log('REFRESH RESPONSE:', refreshText.substring(0, 300))
+
+  const tokens = JSON.parse(refreshText)
+
+  if (!tokens.access_token) {
+    throw new Error(`Token refresh failed: ${refreshText}`)
+  }
+
   const expiresAtNew = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
 
   await supabase
@@ -85,33 +108,62 @@ async function refreshWhoopTokenIfNeeded(client: Record<string, string>): Promis
 }
 
 async function fetchWhoopData(token: string): Promise<Record<string, string | number | null>> {
-  const yesterday = getYesterday()
-  const start = `${yesterday}T00:00:00.000Z`
-  const end = `${yesterday}T23:59:59.000Z`
-
+  const start = getYesterdayStart()
+  const end = getYesterdayEnd()
   const headers = { Authorization: `Bearer ${token}` }
 
   const [recoveryRes, sleepRes, cycleRes, workoutRes] = await Promise.all([
-    fetch(`https://api.prod.whoop.com/developer/v1/recovery?start=${start}&end=${end}`, { headers }),
-    fetch(`https://api.prod.whoop.com/developer/v1/activity/sleep?start=${start}&end=${end}`, { headers }),
-    fetch(`https://api.prod.whoop.com/developer/v1/cycle?start=${start}&end=${end}`, { headers }),
-    fetch(`https://api.prod.whoop.com/developer/v1/activity/workout?start=${start}&end=${end}`, { headers }),
+    fetch(`https://api.prod.whoop.com/developer/v2/recovery?start_time=${start}&end_time=${end}&limit=1`, { headers }),
+    fetch(`https://api.prod.whoop.com/developer/v2/activity/sleep?start_time=${start}&end_time=${end}&limit=10`, { headers }),
+    fetch(`https://api.prod.whoop.com/developer/v2/cycle?start_time=${start}&end_time=${end}&limit=1`, { headers }),
+    fetch(`https://api.prod.whoop.com/developer/v2/activity/workout?start_time=${start}&end_time=${end}&limit=10`, { headers }),
   ])
 
-  const [recoveryData, sleepData, cycleData, workoutData] = await Promise.all([
-    recoveryRes.json(),
-    sleepRes.json(),
-    cycleRes.json(),
-    workoutRes.json(),
+  const [recoveryText, sleepText, cycleText, workoutText] = await Promise.all([
+    recoveryRes.text(),
+    sleepRes.text(),
+    cycleRes.text(),
+    workoutRes.text(),
   ])
 
-  const recovery = recoveryData?.records?.[0]?.score ?? {}
-  const sleep = sleepData?.records?.find((r: Record<string, boolean>) => !r.nap)
+  console.log('Recovery:', recoveryText.substring(0, 300))
+  console.log('Sleep:', sleepText.substring(0, 300))
+  console.log('Cycle:', cycleText.substring(0, 300))
+  console.log('Workout:', workoutText.substring(0, 300))
+
+  const recoveryData = JSON.parse(recoveryText)
+  const sleepData = JSON.parse(sleepText)
+  const cycleData = JSON.parse(cycleText)
+  const workoutData = workoutRes.status === 404 ? { records: [] } : JSON.parse(workoutText)
+
+  const yesterday = getYesterday()
+  console.log('YESTERDAY VALUE:', yesterday)
+  console.log('RECOVERY RECORDS CREATED_AT:', recoveryData?.records?.map((r: any) => r.created_at))
+  const recoveryRecord = recoveryData?.records?.find((r: any) =>
+    r.created_at.startsWith(yesterday)
+  ) ?? recoveryData?.records?.[0]
+  console.log('SELECTED RECOVERY SCORE:', recoveryRecord?.score?.recovery_score)
+  const recovery = recoveryRecord?.score ?? {}
+
+  const sleep = sleepData?.records?.find((r: any) =>
+    !r.nap && r.created_at.startsWith(yesterday)
+  ) ?? sleepData?.records?.find((r: any) => !r.nap)
   const sleepScore = sleep?.score ?? {}
-  const sleepStages = sleep?.stage_summary ?? {}
-  const sleepNeeded = sleep?.sleep_needed ?? {}
-  const cycle = cycleData?.records?.[0]?.score ?? {}
-  const workout = workoutData?.records?.[0]
+  const sleepStages = sleep?.score?.stage_summary ?? {}
+  const sleepNeeded = sleep?.score?.sleep_needed ?? {}
+
+  const cycleRecord = cycleData?.records?.find((r: any) =>
+    r.created_at.startsWith(yesterday)
+  ) ?? cycleData?.records?.[0]
+  const cycle = cycleRecord?.score ?? {}
+
+  const yesterdayWorkouts = workoutData?.records?.filter((r: any) =>
+    r.created_at.startsWith(yesterday)
+  ) ?? []
+  const workout = yesterdayWorkouts.reduce((max: any, w: any) => {
+    if (!max) return w
+    return (w?.score?.strain ?? 0) > (max?.score?.strain ?? 0) ? w : max
+  }, null)
 
   const msToHours = (ms: number | null) =>
     ms != null ? Math.round((ms / 3600000) * 100) / 100 : null
@@ -209,12 +261,25 @@ async function appendToSheet(sheetId: string, row: Record<string, string | numbe
 
   const sheets = google.sheets({ version: 'v4', auth })
 
-  const values = [Object.values(row)]
+  // Get header row to map column positions
+  const headerRes = await sheets.spreadsheets.values.get({
+    spreadsheetId: sheetId,
+    range: 'Tabellenblatt1!1:1',
+  })
+
+  const headers = headerRes.data.values?.[0] ?? []
+
+  // Build a row array aligned to headers
+  const rowArray = headers.map((header: string) => {
+    const key = header.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '')
+    if (header === 'date' || header === 'Date') return row.date ?? ''
+    return row[key] ?? ''
+  })
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: sheetId,
-    range: 'Sheet1!A:A',
+    range: 'Tabellenblatt1!A:A',
     valueInputOption: 'RAW',
-    requestBody: { values },
+    requestBody: { values: [rowArray] },
   })
 }

@@ -25,8 +25,10 @@ export async function GET(request: NextRequest) {
 
     const tokens = await tokenResponse.json()
 
+    console.log('WHOOP TOKEN RESPONSE:', JSON.stringify(tokens))
+
     if (!tokens.access_token) {
-      return NextResponse.redirect(new URL('/error?msg=token_failed', request.url))
+      return NextResponse.redirect(new URL(`/error?msg=${tokens.error ?? 'token_failed'}`, request.url))
     }
 
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
