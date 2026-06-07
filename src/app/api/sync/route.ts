@@ -20,10 +20,13 @@ export async function POST(request: NextRequest) {
         date: getYesterday(),
       }
 
+      let whoopDataRef: any = null
+
       if (client.device === 'whoop' || client.device === 'both') {
         if (!client.whoop_access_token) continue
         const token = await refreshWhoopTokenIfNeeded(client)
         const whoopData = await fetchWhoopData(token)
+        whoopDataRef = whoopData
         Object.assign(row, whoopData)
       }
 
@@ -108,15 +111,13 @@ async function refreshWhoopTokenIfNeeded(client: Record<string, string>): Promis
 }
 
 async function fetchWhoopData(token: string): Promise<Record<string, string | number | null>> {
-  const start = getYesterdayStart()
-  const end = getYesterdayEnd()
   const headers = { Authorization: `Bearer ${token}` }
 
   const [recoveryRes, sleepRes, cycleRes, workoutRes] = await Promise.all([
-    fetch(`https://api.prod.whoop.com/developer/v2/recovery?start_time=${start}&end_time=${end}&limit=1`, { headers }),
-    fetch(`https://api.prod.whoop.com/developer/v2/activity/sleep?start_time=${start}&end_time=${end}&limit=10`, { headers }),
-    fetch(`https://api.prod.whoop.com/developer/v2/cycle?start_time=${start}&end_time=${end}&limit=1`, { headers }),
-    fetch(`https://api.prod.whoop.com/developer/v2/activity/workout?start_time=${start}&end_time=${end}&limit=10`, { headers }),
+    fetch(`https://api.prod.whoop.com/developer/v2/recovery?limit=5`, { headers }),
+    fetch(`https://api.prod.whoop.com/developer/v2/activity/sleep?limit=10`, { headers }),
+    fetch(`https://api.prod.whoop.com/developer/v2/cycle?limit=5`, { headers }),
+    fetch(`https://api.prod.whoop.com/developer/v2/activity/workout?limit=10`, { headers }),
   ])
 
   const [recoveryText, sleepText, cycleText, workoutText] = await Promise.all([
@@ -144,6 +145,7 @@ async function fetchWhoopData(token: string): Promise<Record<string, string | nu
   ) ?? recoveryData?.records?.[0]
   console.log('SELECTED RECOVERY SCORE:', recoveryRecord?.score?.recovery_score)
   const recovery = recoveryRecord?.score ?? {}
+  console.log('FINAL:', recovery.recovery_score, recoveryRecord?.created_at)
 
   const sleep = sleepData?.records?.find((r: any) =>
     !r.nap && r.created_at.startsWith(yesterday)
@@ -171,7 +173,7 @@ async function fetchWhoopData(token: string): Promise<Record<string, string | nu
   const msToMinutes = (ms: number | null) =>
     ms != null ? Math.round(ms / 60000) : null
 
-  return {
+ return {
     whoop_recovery_score: recovery.recovery_score ?? null,
     whoop_rhr: recovery.resting_heart_rate ?? null,
     whoop_hrv_rmssd: recovery.hrv_rmssd_milli ?? null,
