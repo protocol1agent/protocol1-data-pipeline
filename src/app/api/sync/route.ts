@@ -32,7 +32,8 @@ export async function POST(request: NextRequest) {
 
       if (client.device === 'oura' || client.device === 'both') {
         if (!client.oura_access_token) continue
-        const ouraData = await fetchOuraData(client.oura_access_token)
+        const ouraToken = await refreshOuraTokenIfNeeded(client)
+        const ouraData = await fetchOuraData(ouraToken)
         Object.assign(row, ouraData)
       }
 
@@ -104,6 +105,47 @@ async function refreshWhoopTokenIfNeeded(client: Record<string, string>): Promis
       whoop_access_token: tokens.access_token,
       whoop_refresh_token: tokens.refresh_token,
       whoop_token_expires_at: expiresAtNew,
+    })
+    .eq('id', client.id)
+
+  return tokens.access_token
+}
+
+async function refreshOuraTokenIfNeeded(client: Record<string, string>): Promise<string> {
+  const expiresAt = client.oura_token_expires_at ? new Date(client.oura_token_expires_at) : null
+
+  if (!expiresAt || expiresAt > new Date(Date.now() + 5 * 60 * 1000)) {
+    return client.oura_access_token
+  }
+
+  const res = await fetch('https://api.ouraring.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: client.oura_refresh_token,
+      client_id: process.env.OURA_CLIENT_ID!,
+      client_secret: process.env.OURA_CLIENT_SECRET!,
+    }),
+  })
+
+  const refreshText = await res.text()
+  const tokens = JSON.parse(refreshText)
+
+  if (!tokens.access_token) {
+    throw new Error(`OURA token refresh failed: ${refreshText}`)
+  }
+
+  const expiresAtNew = tokens.expires_in
+    ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+    : null
+
+  await supabase
+    .from('clients')
+    .update({
+      oura_access_token: tokens.access_token,
+      oura_refresh_token: tokens.refresh_token,
+      oura_token_expires_at: expiresAtNew,
     })
     .eq('id', client.id)
 
