@@ -56,6 +56,10 @@ function getYesterday(): string {
   return d.toISOString().split('T')[0]
 }
 
+function getToday(): string {
+  return new Date().toISOString().split('T')[0]
+}
+
 function getYesterdayStart(): string {
   const d = new Date()
   d.setDate(d.getDate() - 1)
@@ -251,11 +255,12 @@ async function fetchWhoopData(token: string): Promise<Record<string, string | nu
 
 async function fetchOuraData(token: string): Promise<Record<string, string | number | null>> {
   const yesterday = getYesterday()
+  const today = getToday()
   const headers = { Authorization: `Bearer ${token}` }
 
   const [readinessRes, sleepRes, activityRes] = await Promise.all([
-    fetch(`https://api.ouraring.com/v2/usercollection/daily_readiness?start_date=${yesterday}&end_date=${yesterday}`, { headers }),
-    fetch(`https://api.ouraring.com/v2/usercollection/sleep?start_date=${yesterday}&end_date=${yesterday}`, { headers }),
+    fetch(`https://api.ouraring.com/v2/usercollection/daily_readiness?start_date=${yesterday}&end_date=${today}`, { headers }),
+    fetch(`https://api.ouraring.com/v2/usercollection/sleep?start_date=${yesterday}&end_date=${today}`, { headers }),
     fetch(`https://api.ouraring.com/v2/usercollection/daily_activity?start_date=${yesterday}&end_date=${yesterday}`, { headers }),
   ])
 
@@ -265,8 +270,11 @@ async function fetchOuraData(token: string): Promise<Record<string, string | num
     activityRes.json(),
   ])
 
-  const readiness = readinessData?.data?.[0] ?? {}
-  const sleep = sleepData?.data?.find((s: any) => s.type === 'long_sleep') ?? sleepData?.data?.[0] ?? {}
+  const readiness = readinessData?.data?.find((r: any) => r.day === yesterday) ?? readinessData?.data?.[0] ?? {}
+  const sleep = sleepData?.data?.find((s: any) => s.type === 'long_sleep' && s.day === yesterday) ??
+                sleepData?.data?.find((s: any) => s.type === 'long_sleep' && s.day === today) ??
+                sleepData?.data?.find((s: any) => s.type === 'long_sleep') ??
+                sleepData?.data?.[0] ?? {}
   const activity = activityData?.data?.[0] ?? {}
 
   const secToHours = (s: number | null) =>
