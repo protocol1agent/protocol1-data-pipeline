@@ -264,15 +264,17 @@ async function fetchOuraData(token: string): Promise<Record<string, string | num
   const today = getToday()
   const headers = { Authorization: `Bearer ${token}` }
 
-  const [readinessRes, sleepRes, activityRes] = await Promise.all([
+  const [readinessRes, sleepRes, dailySleepRes, activityRes] = await Promise.all([
     fetch(`https://api.ouraring.com/v2/usercollection/daily_readiness?start_date=${yesterday}&end_date=${yesterday}`, { headers }),
     fetch(`https://api.ouraring.com/v2/usercollection/sleep?start_date=${getDayBefore()}&end_date=${yesterday}`, { headers }),
+    fetch(`https://api.ouraring.com/v2/usercollection/daily_sleep?start_date=${yesterday}&end_date=${yesterday}`, { headers }),
     fetch(`https://api.ouraring.com/v2/usercollection/daily_activity?start_date=${yesterday}&end_date=${yesterday}`, { headers }),
   ])
 
-  const [readinessData, sleepData, activityData] = await Promise.all([
+  const [readinessData, sleepData, dailySleepData, activityData] = await Promise.all([
     readinessRes.json(),
     sleepRes.json(),
+    dailySleepRes.json(),
     activityRes.json(),
   ])
 
@@ -280,6 +282,7 @@ async function fetchOuraData(token: string): Promise<Record<string, string | num
   const sleep = sleepData?.data?.find((s: any) => s.type === 'long_sleep' && s.period === 1) ?? 
                 sleepData?.data?.find((s: any) => s.type === 'long_sleep') ?? 
                 sleepData?.data?.[0] ?? {}
+  const dailySleep = dailySleepData?.data?.[0] ?? {}
   const activity = activityData?.data?.[0] ?? {}
 
   const secToHours = (s: number | null) =>
@@ -291,7 +294,7 @@ async function fetchOuraData(token: string): Promise<Record<string, string | num
     oura_hrv_avg: sleep.average_hrv ?? null,
     oura_spo2_avg: sleep.average_spo2 ?? null,
     oura_body_temp_deviation: sleep.readiness?.temperature_deviation ?? readiness.temperature_deviation ?? null,
-    oura_sleep_score: readiness.score ?? null,
+    oura_sleep_score: dailySleep.score ?? null,
     oura_total_sleep_h: secToHours(sleep.total_sleep_duration),
     oura_sleep_efficiency: sleep.efficiency ?? null,
     oura_deep_sleep_h: secToHours(sleep.deep_sleep_duration),
