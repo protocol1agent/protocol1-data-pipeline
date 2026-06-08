@@ -5,6 +5,8 @@ export const metadata: Metadata = {
   description: 'Connect your wearable to begin your biological data feed.',
   icons: {
     icon: '/logo.png',
+    shortcut: '/logo.png',
+    apple: '/logo.png',
   },
   openGraph: {
     title: 'Protocol 1',
