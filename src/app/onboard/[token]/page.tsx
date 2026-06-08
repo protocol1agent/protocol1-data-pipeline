@@ -48,9 +48,7 @@ export default async function OnboardPage({
         padding: '48px 32px',
         textAlign: 'center',
       }}>
-        <p style={{ color: '#666', fontSize: '12px', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '24px' }}>
-          Protocol 1
-        </p>
+        <img src="/logo.png" alt="Protocol 1" style={{ width: '80px', height: '80px', borderRadius: '50%', marginBottom: '24px', objectFit: 'cover' }} />
         <h1 style={{ color: '#fff', fontSize: '24px', fontWeight: '500', marginBottom: '12px' }}>
           Welcome, {client.name}
         </h1>
